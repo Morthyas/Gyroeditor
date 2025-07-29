@@ -1,114 +1,237 @@
-
 <!DOCTYPE html>
 <html lang="cs">
 <head>
   <meta charset="UTF-8">
-  <title>Gyro Editor 3.0</title>
+  <title>GyroEditor 5.0</title>
   <style>
-    body { background:#111; color:#fff; text-align:center; font-family:Arial; }
-    img { width:90%; max-width:600px; margin-top:20px; transition:filter 0.05s linear; }
-    #info { margin-top:10px; font-size:1.2em; }
-    button, input[type=range] { margin:10px; padding:10px 15px; font-size:1em; border:none; border-radius:8px; }
-    #saveBtn { background:#28a745; color:#fff; }
-    #saveBtn:hover { background:#218838; cursor:pointer; }
-    #fixBtn { background:#007bff; color:#fff; }
-    #fixBtn:hover { background:#0056b3; cursor:pointer; }
-    .presetBtn { background:#6c757d; color:#fff; }
-    .presetBtn:hover { background:#5a6268; cursor:pointer; }
-    #intensity { width:80%; }
+    body { background:#111; color:#fff; text-align:center; font-family:Arial; margin:0; }
+    body.light { background:#f0f0f0; color:#111; }
+    header { display:flex; justify-content:space-between; padding:10px; background:#222; }
+    header button { margin:0 5px; padding:8px 12px; border:none; border-radius:5px; background:#444; color:#fff; }
+    header button:hover { background:#666; cursor:pointer; }
+    #canvas { max-width:100%; margin-top:10px; }
+    #controls { margin-top:10px; }
+    #controls button { margin:5px; padding:8px 12px; border:none; border-radius:5px; background:#444; color:#fff; }
+    #controls button:hover { background:#666; cursor:pointer; }
+    #tipOverlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); color:#fff; display:none; align-items:center; justify-content:center; text-align:center; padding:20px; }
+    #tipOverlay button { margin-top:20px; background:#28a745; }
+    #cropArea { position:absolute; border:2px dashed #fff; display:none; }
   </style>
 </head>
 <body>
-  <h1>Gyro Editor 3.0</h1>
-  <p>Nakláněním měníš <span id="modeName">jas</span> – kliknutím přepínáš režimy.</p>
-  <img id="photo" src="https://picsum.photos/800/500" alt="Obrázek">
-  <div id="info">Jas: 100%</div>
-  <button id="fixBtn">FIX</button>
-  <button id="saveBtn">Save</button>
-  <div id="metallicControls" style="display:none;">
-    <button class="presetBtn" data-hue="45">Zlato</button>
-    <button class="presetBtn" data-hue="0">Chrom</button>
-    <button class="presetBtn" data-hue="200">Duhový</button><br>
-    <label for="intensity">Intenzita efektu</label><br>
-    <input type="range" id="intensity" min="0" max="100" value="50">
+<header>
+  <div>
+    <button id="uploadBtn">Upload</button>
+    <button id="modeBtn">Gyro</button>
+    <button id="themeBtn">Dark/Light</button>
   </div>
+  <div>
+    <button id="undoBtn">Undo</button>
+    <button id="redoBtn">Redo</button>
+    <button id="resetBtn">Reset</button>
+    <button id="saveBtn">Save</button>
+  </div>
+</header>
 
-  <script>
-    let brightness = 100, contrast = 100, saturate = 100, hue = 0;
-    const img = document.getElementById("photo");
-    const info = document.getElementById("info");
-    const modeName = document.getElementById("modeName");
-    const saveBtn = document.getElementById("saveBtn");
-    const fixBtn = document.getElementById("fixBtn");
-    const intensitySlider = document.getElementById("intensity");
-    const metallicControls = document.getElementById("metallicControls");
-    let mode = 0; // 0=jas,1=kontrast,2=saturace,3=metalický,4=odstín
-    const modeLabels = ["jas","kontrast","saturaci","metalický efekt","odstín"];
-    let tiltValues = [];
-    let fixOffset = 0;
-    let metallicIntensity = 50;
+<canvas id="canvas"></canvas>
+<div id="controls">
+  <button class="mode" data-mode="brightness">Jas</button>
+  <button class="mode" data-mode="contrast">Kontrast</button>
+  <button class="mode" data-mode="saturate">Saturace</button>
+  <button class="mode" data-mode="hue">Odstín</button>
+  <button class="mode" data-mode="metallic">Metalický</button>
+  <button class="mode" data-mode="aging">Aging</button>
+  <button id="cropBtn">Crop</button>
+</div>
 
-    function updateFilter() {
-      let metallic = mode === 3 ? `hue-rotate(${hue}deg) saturate(${metallicIntensity}%)` : "";
-      let grayscale = mode === 4 ? `grayscale(${100 - brightness}%)` : "";
-      img.style.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) ${metallic} ${grayscale}`;
+<div id="tipOverlay">
+  <div>
+    <h2>Vítejte v GyroEditoru!</h2>
+    <p>Nakláněním telefonu nebo tažením prstem měníte hodnoty.<br>Klikněte na režimy (Jas, Kontrast, …) pro úpravy.<br>Přepínejte mezi Gyro/Touch, ořezávejte, ukládejte.</p>
+    <button id="closeTips">Rozumím</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" style="display:none;">
+<div id="cropArea"></div>
+
+<script>
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const fileInput = document.getElementById("fileInput");
+  const tipOverlay = document.getElementById("tipOverlay");
+  const cropArea = document.getElementById("cropArea");
+  let img = new Image();
+  let currentMode = "brightness";
+  let controlMode = "gyro";
+  let history = [], redoStack = [];
+  let cropping = false;
+  let cropStartX, cropStartY;
+  let fixOffset = 0;
+  let currentFilters = { brightness:100, contrast:100, saturate:100, hue:0, metallic:0, aging:0 };
+
+  function pushHistory() {
+    history.push(canvas.toDataURL());
+    redoStack = [];
+  }
+
+  function applyFilters() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.filter = `
+      brightness(${currentFilters.brightness}%)
+      contrast(${currentFilters.contrast}%)
+      saturate(${currentFilters.saturate}%)
+      hue-rotate(${currentFilters.hue}deg)
+      sepia(${currentFilters.aging/100})
+    `;
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  }
+
+  function loadImage(src) {
+    img = new Image();
+    img.onload = () => {
+      const aspect = img.width / img.height;
+      if (aspect > 1) { canvas.width = window.innerWidth; canvas.height = window.innerWidth / aspect; }
+      else { canvas.height = window.innerHeight * 0.7; canvas.width = canvas.height * aspect; }
+      applyFilters();
+      pushHistory();
+    };
+    img.src = src;
+  }
+
+  document.getElementById("uploadBtn").onclick = ()=>fileInput.click();
+  fileInput.onchange = e => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = ev => loadImage(ev.target.result);
+      reader.readAsDataURL(file);
     }
+  };
 
-    function smoothTilt(val) {
-      tiltValues.push(val);
-      if (tiltValues.length > 5) tiltValues.shift();
-      return tiltValues.reduce((a,b) => a+b,0)/tiltValues.length;
+  document.querySelectorAll(".mode").forEach(btn=>{
+    btn.onclick=()=>{
+      currentMode = btn.dataset.mode;
+      flattenImage();
+    };
+  });
+
+  function flattenImage() {
+    const data = canvas.toDataURL();
+    loadImage(data);
+  }
+
+  document.getElementById("modeBtn").onclick=()=>{
+    controlMode = controlMode==="gyro" ? "touch":"gyro";
+    document.getElementById("modeBtn").textContent = controlMode==="gyro"?"Gyro":"Touch";
+  };
+
+  document.getElementById("themeBtn").onclick=()=>{
+    document.body.classList.toggle("light");
+  };
+
+  document.getElementById("undoBtn").onclick=()=>{
+    if (history.length>1) {
+      redoStack.push(history.pop());
+      loadImage(history[history.length-1]);
     }
+  };
+  document.getElementById("redoBtn").onclick=()=>{
+    if (redoStack.length>0) {
+      const data = redoStack.pop();
+      loadImage(data);
+    }
+  };
+  document.getElementById("resetBtn").onclick=()=>{
+    if (history.length>0) loadImage(history[0]);
+  };
+  document.getElementById("saveBtn").onclick=()=>{
+    const link = document.createElement('a');
+    link.download='upraveny_obrazek.png';
+    link.href=canvas.toDataURL();
+    link.click();
+  };
 
-    window.addEventListener('deviceorientation', (event) => {
-      let tilt = event.gamma;
-      if (tilt !== null) {
-        let smooth = smoothTilt(tilt - fixOffset);
-        let value = Math.min(200, Math.max(0, 100 + (smooth * (200/30)))); // rozsah ±15° = plné rozpětí
-        if (mode === 0) brightness = value;
-        if (mode === 1) contrast = value;
-        if (mode === 2) saturate = value;
-        if (mode === 3) hue = smooth * 6; // barevný posun
-        if (mode === 4) brightness = value;
-        updateFilter();
-        info.textContent = `${modeLabels[mode][0].toUpperCase() + modeLabels[mode].slice(1)}: ${Math.round(value)}%`;
-      }
-    });
+  // Gyro
+  window.addEventListener('deviceorientation', e=>{
+    if (controlMode!=="gyro") return;
+    if (e.gamma!==null) {
+      let val = Math.min(200, Math.max(0, 100 + (e.gamma - fixOffset) * (200/30)));
+      adjustFilter(val);
+    }
+  });
 
-    img.addEventListener('click', () => {
-      mode = (mode + 1) % 5;
-      modeName.textContent = modeLabels[mode];
-      metallicControls.style.display = (mode === 3) ? "block" : "none";
-    });
+  // Touch
+  let touching=false, lastX=0;
+  canvas.addEventListener('touchstart',e=>{if(controlMode==="touch"){touching=true;lastX=e.touches[0].clientX;}});
+  canvas.addEventListener('touchmove',e=>{
+    if(controlMode==="touch" && touching){
+      let dx=e.touches[0].clientX - lastX;
+      lastX = e.touches[0].clientX;
+      adjustFilter(currentFilters[currentMode]+dx);
+    }
+  });
+  canvas.addEventListener('touchend',()=>{touching=false;});
 
-    fixBtn.addEventListener('click', () => {
-      fixOffset = tiltValues.length ? tiltValues[tiltValues.length - 1] : 0;
-    });
+  function adjustFilter(val){
+    if (currentMode==="hue") currentFilters.hue = val;
+    else if (currentMode==="metallic") currentFilters.metallic = val;
+    else if (currentMode==="aging") currentFilters.aging = val;
+    else currentFilters[currentMode] = val;
+    applyFilters();
+  }
 
-    intensitySlider.addEventListener('input', () => {
-      metallicIntensity = intensitySlider.value;
-      updateFilter();
-    });
+  // Crop
+  document.getElementById("cropBtn").onclick=()=>{
+    cropping = !cropping;
+    cropArea.style.display = cropping ? "block" : "none";
+  };
+  canvas.addEventListener('mousedown',e=>{
+    if (!cropping) return;
+    cropStartX = e.offsetX; cropStartY = e.offsetY;
+    cropArea.style.left = e.pageX+"px";
+    cropArea.style.top = e.pageY+"px";
+    cropArea.style.width="0px"; cropArea.style.height="0px";
+    cropArea.style.display="block";
+    function onMove(ev){
+      cropArea.style.width = Math.abs(ev.pageX - e.pageX)+"px";
+      cropArea.style.height = Math.abs(ev.pageY - e.pageY)+"px";
+      cropArea.style.left = Math.min(ev.pageX,e.pageX)+"px";
+      cropArea.style.top = Math.min(ev.pageY,e.pageY)+"px";
+    }
+    function onUp(ev){
+      const endX = ev.offsetX, endY = ev.offsetY;
+      const sx = Math.min(cropStartX,endX), sy = Math.min(cropStartY,endY);
+      const sw = Math.abs(cropStartX-endX), sh = Math.abs(cropStartY-endY);
+      const cropped = ctx.getImageData(sx,sy,sw,sh);
+      canvas.width = sw; canvas.height = sh;
+      ctx.putImageData(cropped,0,0);
+      cropArea.style.display="none";
+      cropping=false;
+      pushHistory();
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+    }
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  });
 
-    document.querySelectorAll('.presetBtn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        hue = parseInt(btn.dataset.hue);
-        updateFilter();
-      });
-    });
+  document.getElementById("closeTips").onclick=()=>tipOverlay.style.display="none";
+  window.onload=()=>tipOverlay.style.display="flex";
 
-    saveBtn.addEventListener('click', () => {
-      html2canvas(img).then(canvas => {
-        const link = document.createElement('a');
-        link.download = 'upraveny_obrazek.png';
-        link.href = canvas.toDataURL();
-        link.click();
-      });
-    });
+  // Drag & Drop
+  document.body.ondragover=e=>{e.preventDefault();};
+  document.body.ondrop=e=>{
+    e.preventDefault();
+    const file=e.dataTransfer.files[0];
+    if(file){
+      const reader=new FileReader();
+      reader.onload=ev=>loadImage(ev.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
 
-    const script = document.createElement('script');
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-    document.head.appendChild(script);
-  </script>
+  loadImage("https://picsum.photos/800/500");
+</script>
 </body>
 </html>
