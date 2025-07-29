@@ -3,21 +3,35 @@
 <html lang="cs">
 <head>
   <meta charset="UTF-8">
-  <title>Gyro Editor 2.0</title>
+  <title>Gyro Editor 3.0</title>
   <style>
     body { background:#111; color:#fff; text-align:center; font-family:Arial; }
     img { width:90%; max-width:600px; margin-top:20px; transition:filter 0.05s linear; }
-    #info { margin-top:20px; font-size:1.2em; }
-    #saveBtn { margin-top:20px; padding:10px 20px; font-size:1em; border:none; border-radius:8px; background:#28a745; color:#fff; }
+    #info { margin-top:10px; font-size:1.2em; }
+    button, input[type=range] { margin:10px; padding:10px 15px; font-size:1em; border:none; border-radius:8px; }
+    #saveBtn { background:#28a745; color:#fff; }
     #saveBtn:hover { background:#218838; cursor:pointer; }
+    #fixBtn { background:#007bff; color:#fff; }
+    #fixBtn:hover { background:#0056b3; cursor:pointer; }
+    .presetBtn { background:#6c757d; color:#fff; }
+    .presetBtn:hover { background:#5a6268; cursor:pointer; }
+    #intensity { width:80%; }
   </style>
 </head>
 <body>
-  <h1>Gyro Editor 2.0</h1>
+  <h1>Gyro Editor 3.0</h1>
   <p>Nakláněním měníš <span id="modeName">jas</span> – kliknutím přepínáš režimy.</p>
   <img id="photo" src="https://picsum.photos/800/500" alt="Obrázek">
   <div id="info">Jas: 100%</div>
+  <button id="fixBtn">FIX</button>
   <button id="saveBtn">Save</button>
+  <div id="metallicControls" style="display:none;">
+    <button class="presetBtn" data-hue="45">Zlato</button>
+    <button class="presetBtn" data-hue="0">Chrom</button>
+    <button class="presetBtn" data-hue="200">Duhový</button><br>
+    <label for="intensity">Intenzita efektu</label><br>
+    <input type="range" id="intensity" min="0" max="100" value="50">
+  </div>
 
   <script>
     let brightness = 100, contrast = 100, saturate = 100, hue = 0;
@@ -25,17 +39,21 @@
     const info = document.getElementById("info");
     const modeName = document.getElementById("modeName");
     const saveBtn = document.getElementById("saveBtn");
-    let mode = 0; // 0=jas, 1=kontrast, 2=saturace, 3=metalický efekt, 4=odstín
-    const modeLabels = ["jas", "kontrast", "saturaci", "metalický efekt", "odstín"];
+    const fixBtn = document.getElementById("fixBtn");
+    const intensitySlider = document.getElementById("intensity");
+    const metallicControls = document.getElementById("metallicControls");
+    let mode = 0; // 0=jas,1=kontrast,2=saturace,3=metalický,4=odstín
+    const modeLabels = ["jas","kontrast","saturaci","metalický efekt","odstín"];
     let tiltValues = [];
+    let fixOffset = 0;
+    let metallicIntensity = 50;
 
     function updateFilter() {
-      let metallic = mode === 3 ? `hue-rotate(${hue}deg)` : "";
+      let metallic = mode === 3 ? `hue-rotate(${hue}deg) saturate(${metallicIntensity}%)` : "";
       let grayscale = mode === 4 ? `grayscale(${100 - brightness}%)` : "";
       img.style.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) ${metallic} ${grayscale}`;
     }
 
-    // Vyhlazení hodnot (citlivější + plynulejší)
     function smoothTilt(val) {
       tiltValues.push(val);
       if (tiltValues.length > 5) tiltValues.shift();
@@ -45,13 +63,13 @@
     window.addEventListener('deviceorientation', (event) => {
       let tilt = event.gamma;
       if (tilt !== null) {
-        let smooth = smoothTilt(tilt);
-        let value = Math.min(200, Math.max(0, 100 + (smooth * (200/60)))); // citlivější: +/-30° ~ 0-200%
+        let smooth = smoothTilt(tilt - fixOffset);
+        let value = Math.min(200, Math.max(0, 100 + (smooth * (200/30)))); // rozsah ±15° = plné rozpětí
         if (mode === 0) brightness = value;
         if (mode === 1) contrast = value;
         if (mode === 2) saturate = value;
-        if (mode === 3) hue = (smooth * 3); // jemný barevný posun
-        if (mode === 4) brightness = value; // využíváme brightness jako řízení grayscale
+        if (mode === 3) hue = smooth * 6; // barevný posun
+        if (mode === 4) brightness = value;
         updateFilter();
         info.textContent = `${modeLabels[mode][0].toUpperCase() + modeLabels[mode].slice(1)}: ${Math.round(value)}%`;
       }
@@ -60,9 +78,25 @@
     img.addEventListener('click', () => {
       mode = (mode + 1) % 5;
       modeName.textContent = modeLabels[mode];
+      metallicControls.style.display = (mode === 3) ? "block" : "none";
     });
 
-    // Save aktuální obrázek jako PNG
+    fixBtn.addEventListener('click', () => {
+      fixOffset = tiltValues.length ? tiltValues[tiltValues.length - 1] : 0;
+    });
+
+    intensitySlider.addEventListener('input', () => {
+      metallicIntensity = intensitySlider.value;
+      updateFilter();
+    });
+
+    document.querySelectorAll('.presetBtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hue = parseInt(btn.dataset.hue);
+        updateFilter();
+      });
+    });
+
     saveBtn.addEventListener('click', () => {
       html2canvas(img).then(canvas => {
         const link = document.createElement('a');
@@ -72,7 +106,6 @@
       });
     });
 
-    // Načtení knihovny html2canvas pro export
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
     document.head.appendChild(script);
