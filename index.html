@@ -49,9 +49,9 @@
   </div>
   <div id="overlay">
     <div>
-      <h2>Vítejte v GyroEditoru 6.0</h2>
-      <p>Nakláněním telefonu nebo tažením prstem měníte hodnoty.<br>Klikněte na režimy dole pro úpravy.<br>Přes tlačítko Foto můžete rovnou fotit.</p>
-      <button id="closeOverlay">Rozumím</button>
+      <h2>Welcome to GyroEditor 6.0</h2>
+      <p>Tilt your phone or swipe to adjust values.<br>Tap modes below for editing.<br>Use the Photo button to take pictures directly.</p>
+      <button id="closeOverlay">Got it!</button>
     </div>
   </div>
   <input type="file" id="fileInput" accept="image/*" style="display:none;">
@@ -62,9 +62,9 @@
     const overlay = document.getElementById("overlay");
     let img = new Image();
     let currentMode = "brightness";
-    let controlMode = "touch";
     let history = [], redoStack = [];
     let currentFilters = { brightness:100, contrast:100, saturate:100, hue:0, metallic:0, aging:0 };
+
     function pushHistory() { history.push(canvas.toDataURL()); redoStack = []; }
     function applyFilters() {
       ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -81,28 +81,35 @@
       };
       img.src = src;
     }
+
     document.getElementById("uploadBtn").onclick = ()=>fileInput.click();
     fileInput.onchange = e => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = ev => loadImage(ev.target.result); reader.readAsDataURL(file); } };
     document.getElementById("cameraBtn").onclick = () => { fileInput.setAttribute("capture","environment"); fileInput.click(); };
+
     document.querySelectorAll(".mode").forEach(btn=>{ btn.onclick=()=>{ currentMode = btn.dataset.mode; flattenImage(); }; });
     function flattenImage() { const data = canvas.toDataURL(); loadImage(data); }
+
     document.getElementById("themeBtn").onclick = ()=>document.body.classList.toggle("light");
     document.getElementById("undoBtn").onclick=()=>{ if (history.length>1) { redoStack.push(history.pop()); loadImage(history[history.length-1]); } };
     document.getElementById("redoBtn").onclick=()=>{ if (redoStack.length>0) { const data = redoStack.pop(); loadImage(data); } };
     document.getElementById("resetBtn").onclick=()=>{ if (history.length>0) loadImage(history[0]); };
     document.getElementById("saveBtn").onclick=()=>{ const link = document.createElement('a'); link.download='upraveny_obrazek.png'; link.href=canvas.toDataURL(); link.click(); };
+
     function adjustFilter(val){ if (currentMode==="hue") currentFilters.hue = val; else if (currentMode==="metallic") currentFilters.metallic = val; else if (currentMode==="aging") currentFilters.aging = val; else currentFilters[currentMode] = val; applyFilters(); }
     let touching=false, lastX=0;
     canvas.addEventListener('touchstart',e=>{ touching=true; lastX=e.touches[0].clientX; });
     canvas.addEventListener('touchmove',e=>{ if(touching){ let dx=e.touches[0].clientX - lastX; lastX = e.touches[0].clientX; adjustFilter(currentFilters[currentMode]+dx); } });
     canvas.addEventListener('touchend',()=>{ touching=false; });
+
     document.getElementById("preset1920").onclick=()=>{ currentFilters={brightness:90,contrast:110,saturate:70,hue:20,metallic:0,aging:80}; applyFilters(); };
     document.getElementById("preset1960").onclick=()=>{ currentFilters={brightness:100,contrast:90,saturate:80,hue:-10,metallic:0,aging:40}; applyFilters(); };
     document.getElementById("presetRetro").onclick=()=>{ currentFilters={brightness:95,contrast:120,saturate:110,hue:15,metallic:0,aging:20}; applyFilters(); };
+
     document.getElementById("closeOverlay").onclick=()=>overlay.style.display="none";
     window.onload=()=>overlay.style.display="flex";
     document.body.ondragover=e=>e.preventDefault();
     document.body.ondrop=e=>{ e.preventDefault(); const file=e.dataTransfer.files[0]; if(file){ const reader=new FileReader(); reader.onload=ev=>loadImage(ev.target.result); reader.readAsDataURL(file); } };
+
     loadImage("https://picsum.photos/800/500");
     if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
   </script>
