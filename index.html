@@ -8,4 +8,103 @@
   <style>
     body { margin:0; font-family:Arial; background:#111; color:#fff; overflow:hidden; }
     #canvas { display:block; margin:0 auto; max-width:100%; max-height:80vh; background:#000; }
-    #menu { position:fixed; bottom:0; width:100%; background:#222;
+    #menu { position:fixed; bottom:0; width:100%; background:#222; display:flex; overflow-x:auto; }
+    #menu button { flex:0 0 auto; padding:10px; margin:5px; background:#444; border:none; color:#fff; border-radius:6px; }
+    #menu button:hover { background:#666; }
+    #topbar { position:fixed; top:0; width:100%; background:#222; display:flex; justify-content:space-between; padding:8px; }
+    #topbar button { padding:8px 12px; background:#444; border:none; color:#fff; border-radius:6px; }
+    #topbar button:hover { background:#666; }
+    body.light { background:#eee; color:#000; }
+    body.light #menu, body.light #topbar { background:#ddd; }
+    #overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); color:#fff; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; }
+    #overlay button { margin-top:20px; background:#28a745; border:none; color:#fff; padding:10px 20px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div>
+      <button id="uploadBtn">Nahrát</button>
+      <button id="cameraBtn">Foto</button>
+      <button id="themeBtn">Light/Dark</button>
+    </div>
+    <div>
+      <button id="undoBtn">↩</button>
+      <button id="redoBtn">↪</button>
+      <button id="resetBtn">Reset</button>
+      <button id="saveBtn">Uložit</button>
+    </div>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="menu">
+    <button class="mode" data-mode="brightness">Jas</button>
+    <button class="mode" data-mode="contrast">Kontrast</button>
+    <button class="mode" data-mode="saturate">Saturace</button>
+    <button class="mode" data-mode="hue">Odstín</button>
+    <button class="mode" data-mode="metallic">Metalický</button>
+    <button class="mode" data-mode="aging">Aging</button>
+    <button id="preset1920">1920s</button>
+    <button id="preset1960">1960s</button>
+    <button id="presetRetro">Retro</button>
+    <button id="cropBtn">Ořez</button>
+  </div>
+  <div id="overlay">
+    <div>
+      <h2>Vítejte v GyroEditoru 6.0</h2>
+      <p>Nakláněním telefonu nebo tažením prstem měníte hodnoty.<br>Klikněte na režimy dole pro úpravy.<br>Přes tlačítko Foto můžete rovnou fotit.</p>
+      <button id="closeOverlay">Rozumím</button>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none;">
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const fileInput = document.getElementById("fileInput");
+    const overlay = document.getElementById("overlay");
+    let img = new Image();
+    let currentMode = "brightness";
+    let controlMode = "touch";
+    let history = [], redoStack = [];
+    let currentFilters = { brightness:100, contrast:100, saturate:100, hue:0, metallic:0, aging:0 };
+    function pushHistory() { history.push(canvas.toDataURL()); redoStack = []; }
+    function applyFilters() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.filter = `brightness(${currentFilters.brightness}%) contrast(${currentFilters.contrast}%) saturate(${currentFilters.saturate}%) hue-rotate(${currentFilters.hue}deg) sepia(${currentFilters.aging/100})`;
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    }
+    function loadImage(src) {
+      img = new Image();
+      img.onload = () => {
+        const aspect = img.width / img.height;
+        if (aspect > 1) { canvas.width = window.innerWidth; canvas.height = window.innerWidth / aspect; }
+        else { canvas.height = window.innerHeight * 0.7; canvas.width = canvas.height * aspect; }
+        applyFilters(); pushHistory();
+      };
+      img.src = src;
+    }
+    document.getElementById("uploadBtn").onclick = ()=>fileInput.click();
+    fileInput.onchange = e => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = ev => loadImage(ev.target.result); reader.readAsDataURL(file); } };
+    document.getElementById("cameraBtn").onclick = () => { fileInput.setAttribute("capture","environment"); fileInput.click(); };
+    document.querySelectorAll(".mode").forEach(btn=>{ btn.onclick=()=>{ currentMode = btn.dataset.mode; flattenImage(); }; });
+    function flattenImage() { const data = canvas.toDataURL(); loadImage(data); }
+    document.getElementById("themeBtn").onclick = ()=>document.body.classList.toggle("light");
+    document.getElementById("undoBtn").onclick=()=>{ if (history.length>1) { redoStack.push(history.pop()); loadImage(history[history.length-1]); } };
+    document.getElementById("redoBtn").onclick=()=>{ if (redoStack.length>0) { const data = redoStack.pop(); loadImage(data); } };
+    document.getElementById("resetBtn").onclick=()=>{ if (history.length>0) loadImage(history[0]); };
+    document.getElementById("saveBtn").onclick=()=>{ const link = document.createElement('a'); link.download='upraveny_obrazek.png'; link.href=canvas.toDataURL(); link.click(); };
+    function adjustFilter(val){ if (currentMode==="hue") currentFilters.hue = val; else if (currentMode==="metallic") currentFilters.metallic = val; else if (currentMode==="aging") currentFilters.aging = val; else currentFilters[currentMode] = val; applyFilters(); }
+    let touching=false, lastX=0;
+    canvas.addEventListener('touchstart',e=>{ touching=true; lastX=e.touches[0].clientX; });
+    canvas.addEventListener('touchmove',e=>{ if(touching){ let dx=e.touches[0].clientX - lastX; lastX = e.touches[0].clientX; adjustFilter(currentFilters[currentMode]+dx); } });
+    canvas.addEventListener('touchend',()=>{ touching=false; });
+    document.getElementById("preset1920").onclick=()=>{ currentFilters={brightness:90,contrast:110,saturate:70,hue:20,metallic:0,aging:80}; applyFilters(); };
+    document.getElementById("preset1960").onclick=()=>{ currentFilters={brightness:100,contrast:90,saturate:80,hue:-10,metallic:0,aging:40}; applyFilters(); };
+    document.getElementById("presetRetro").onclick=()=>{ currentFilters={brightness:95,contrast:120,saturate:110,hue:15,metallic:0,aging:20}; applyFilters(); };
+    document.getElementById("closeOverlay").onclick=()=>overlay.style.display="none";
+    window.onload=()=>overlay.style.display="flex";
+    document.body.ondragover=e=>e.preventDefault();
+    document.body.ondrop=e=>{ e.preventDefault(); const file=e.dataTransfer.files[0]; if(file){ const reader=new FileReader(); reader.onload=ev=>loadImage(ev.target.result); reader.readAsDataURL(file); } };
+    loadImage("https://picsum.photos/800/500");
+    if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
+  </script>
+</body>
+</html>
